@@ -5,7 +5,6 @@ const session = require('express-session');
 const bcrypt = require('bcrypt');
 const sqlite3 = require('sqlite3').verbose();
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-//const { Mistral } = require('@mistralai/mistralai');
 const app = express();
 
 const sslOptions = {
@@ -15,7 +14,6 @@ const sslOptions = {
 
 const db = new sqlite3.Database('./users.db');
 
-// Ajout des colonnes Jira
 db.serialize(() => {
     db.run("ALTER TABLE users ADD COLUMN jira_url TEXT", (err) => { if (err && !err.message.includes('duplicate')) console.log('Colonne jira_url ajoutée'); });
     db.run("ALTER TABLE users ADD COLUMN jira_email TEXT", (err) => { if (err && !err.message.includes('duplicate')) console.log('Colonne jira_email ajoutée'); });
@@ -140,7 +138,7 @@ app.put('/api/admin/users/:username/password', requireAdmin, async (req, res) =>
     });
 });
 
-// ========== CONFIGURATION JIRA (utilisateur) ==========
+// ========== CONFIGURATION JIRA ==========
 app.get('/api/user/jira-config', requireAuth, (req, res) => {
     db.get('SELECT jira_url, jira_email, jira_token FROM users WHERE id = ?', [req.session.user.id], (err, row) => {
         if (err || !row) return res.json({ url: '', email: '', token: '' });
@@ -170,7 +168,6 @@ app.post('/api/jira/create-issue', requireAuth, async (req, res) => {
         const jiraUrl = row.jira_url.replace(/\/$/, '');
         const auth = Buffer.from(`${row.jira_email}:${row.jira_token}`).toString('base64');
         try {
-            // Construction de la description au format ADF (si non vide)
             let descriptionField = undefined;
             if (description && description.trim()) {
                 descriptionField = {
@@ -236,7 +233,7 @@ app.post('/api/jira/create-issue', requireAuth, async (req, res) => {
     });
 });
 
-// ========== JIRA SIMPLE URL (pour le bouton "Ouvrir Jira") ==========
+// ========== JIRA URL ==========
 app.get('/api/settings/jira-url', (req, res) => {
     db.get('SELECT value FROM settings WHERE key = "jira_url"', (err, row) => {
         if (err || !row) return res.json({ url: 'https://www.atlassian.com/software/jira' });
@@ -838,8 +835,6 @@ function detectLanguageFromPrompt(prompt) {
     if (lower.includes('.net') || lower.includes('dotnet')) return 'dotnet';
     return null;
 }
-
-// Fonction qui garantit un YAML avec lignes vides
 function formatYaml(yamlStr) {
     if (!yamlStr || !yamlStr.includes('stages:')) return yamlStr;
     const lines = yamlStr.split(/\r?\n/);
@@ -855,7 +850,6 @@ function formatYaml(yamlStr) {
         }
         result.push(line);
     }
-    // Nettoyer les doubles lignes vides
     return result.join('\n').replace(/\n\s*\n\s*\n/g, '\n\n');
 }
 
@@ -876,7 +870,6 @@ app.post('/api/ai/ask', requireAuth, async (req, res) => {
     const { prompt } = req.body;
     if (!prompt) return res.status(400).json({ error: 'Prompt requis' });
 
-    // Vérifier si l'utilisateur demande un pipeline
     const isPipelineRequest = /pipeline|\.gitlab-ci\.yml|yaml|ci\/cd/i.test(prompt);
     if (isPipelineRequest) {
         const lang = detectLanguageFromPrompt(prompt);
@@ -885,14 +878,12 @@ app.post('/api/ai/ask', requireAuth, async (req, res) => {
             const yaml = formatYaml(pipelineTemplates[lang]);
             return res.json({ success: true, reply: yaml });
         } else {
-            // Si le langage n'est pas supporté, répondre via IA
             if (!MISTRAL_API_KEY) {
                 return res.json({ success: true, reply: "Désolé, je n'ai pas de template pour ce langage. Vous pouvez me demander pour Angular, React, Vue, Go, Rust ou .NET." });
             }
         }
     }
 
-    // Pour les questions générales
     if (!MISTRAL_API_KEY) {
         return res.status(500).json({ error: 'Clé API Mistral non configurée' });
     }
