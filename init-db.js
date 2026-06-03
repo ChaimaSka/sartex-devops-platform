@@ -5,7 +5,7 @@ const db = new sqlite3.Database('./users.db');
 async function initDatabase() {
     return new Promise((resolve, reject) => {
         db.serialize(() => {
-            // Table users (inclut les colonnes Jira)
+            // Table users
             db.run(`CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE,
@@ -18,7 +18,7 @@ async function initDatabase() {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )`, (err) => { if (err) console.error('Erreur users:', err); else console.log('✅ Table users prête'); });
 
-            // Table deployments (historique des déploiements)
+            // Table deployments
             db.run(`CREATE TABLE IF NOT EXISTS deployments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -31,7 +31,7 @@ async function initDatabase() {
                 FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
             )`, (err) => { if (err) console.error('Erreur deployments:', err); else console.log('✅ Table deployments prête'); });
 
-            // Table projects (cache des projets GitLab)
+            // Table projects
             db.run(`CREATE TABLE IF NOT EXISTS projects (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -50,7 +50,7 @@ async function initDatabase() {
                 value TEXT
             )`, (err) => { if (err) console.error('Erreur settings:', err); else console.log('✅ Table settings prête'); });
 
-            // Création du compte admin par défaut (si aucun utilisateur)
+            // Création du compte admin 
             db.get(`SELECT COUNT(*) as count FROM users`, async (err, row) => {
                 if (err) return;
                 if (row.count === 0) {
@@ -61,7 +61,7 @@ async function initDatabase() {
                 }
             });
 
-            // Insertion d'une URL Jira par défaut dans settings (si absente)
+            // Insertion d'une URL Jira par défaut dans settings
             db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`,
                 ['jira_url', 'https://votre-instance.atlassian.net']);
 
