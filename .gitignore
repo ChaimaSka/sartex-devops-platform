@@ -1,0 +1,27 @@
+# Dépendances
+node_modules/
+
+# Base de données et historique
+users.db
+deployment-history.json
+
+# Certificats SSL
+ssl/
+*.pem
+*.key
+*.crt
+
+# Logs
+*.log
+
+# Fichiers d'environnement
+.env
+.env.local
+
+# Fichiers temporaires ou de build
+/tmp
+*.tmp
+
+# Fichiers spécifiques à l’IDE 
+.vscode/
+.idea/

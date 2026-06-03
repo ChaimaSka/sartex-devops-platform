@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Sartex DevOps Platform</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0A192F 0%, #1E3A8A 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .login-container {
+            background: rgba(10,25,47,0.85);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            width: 400px;
+            max-width: 90%;
+            border-top: 4px solid #3B82F6;
+            box-shadow: 0 0 30px rgba(59,130,246,0.2);
+        }
+        .logo { text-align: center; margin-bottom: 30px; }
+        .logo h1 { color: white; font-size: 1.5rem; letter-spacing: 1px; }
+        .logo p { color: #3B82F6; font-size: 0.8rem; margin-top: 5px; }
+        .error {
+            background: rgba(239,68,68,0.2);
+            border-left: 3px solid #ef4444;
+            padding: 10px;
+            margin-bottom: 20px;
+            color: #fca5a5;
+            font-size: 0.85rem;
+            display: none;
+        }
+        .input-group {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            background: rgba(30,30,50,0.9);
+            border: 1px solid rgba(59,130,246,0.3);
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            transition: all 0.3s;
+            padding-right: 40px;
+        }
+        input:focus {
+            outline: none;
+            border-color: #3B82F6;
+            box-shadow: 0 0 10px rgba(59,130,246,0.3);
+        }
+        .toggle-pwd {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #aaa;
+            font-size: 1.2rem;
+            user-select: none;
+        }
+        .toggle-pwd:hover { color: #3B82F6; }
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #1E3A8A 0%, #3B82F6 100%);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+        button:hover { transform: scale(1.02); box-shadow: 0 0 20px rgba(59,130,246,0.5); }
+        .register-link {
+            text-align: center;
+            margin-top: 20px;
+            color: #ccc;
+            font-size: 0.85rem;
+        }
+        .register-link a {
+            color: #3B82F6;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: #0F172A;
+            padding: 30px;
+            border-radius: 20px;
+            width: 400px;
+            max-width: 90%;
+            border-top: 4px solid #F59E0B;
+        }
+        .modal-content h3 { color: white; margin-bottom: 20px; }
+        .close-modal {
+            float: right;
+            font-size: 24px;
+            cursor: pointer;
+            color: white;
+        }
+        datalist option { background: #1E293B; color: white; }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <h1>SARTEX</h1>
+            <p>DevOps Platform</p>
+        </div>
+        <div class="error" id="errorMsg"></div>
+        <div class="input-group">
+            <input type="text" id="username" list="loginUsernameList" placeholder="Nom d'utilisateur" autocomplete="off">
+            <datalist id="loginUsernameList"></datalist>
+        </div>
+        <div class="input-group">
+            <input type="password" id="password" placeholder="Mot de passe">
+            <span class="toggle-pwd" onclick="togglePassword()">👁️</span>
+        </div>
+        <button onclick="login()">Se connecter</button>
+        <div class="register-link">
+            Pas de compte ? <a id="showRegisterBtn">Créer un compte</a>
+        </div>
+    </div>
+
+    <!-- Modal d'inscription -->
+    <div id="registerModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h3>Créer un compte</h3>
+            <div class="input-group">
+                <input type="text" id="regUsername" placeholder="Nom d'utilisateur">
+            </div>
+            <div class="input-group">
+                <input type="password" id="regPassword" placeholder="Mot de passe">
+            </div>
+            <div class="input-group">
+                <input type="text" id="regGitlabToken" placeholder="Token GitLab (optionnel)">
+            </div>
+            <button id="doRegisterBtn">S'inscrire</button>
+            <div id="registerError" style="color:#fca5a5; margin-top:10px; display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        // Historique des noms d'utilisateur
+        const STORAGE_LOGIN_USERNAMES = 'sartex_login_usernames';
+        const MAX_LOGIN_HISTORY = 10;
+
+        function loadLoginHistory() {
+            let list = localStorage.getItem(STORAGE_LOGIN_USERNAMES);
+            return list ? JSON.parse(list) : [];
+        }
+
+        function saveLoginHistory(list) {
+            localStorage.setItem(STORAGE_LOGIN_USERNAMES, JSON.stringify(list.slice(0, MAX_LOGIN_HISTORY)));
+        }
+
+        function addToLoginHistory(username) {
+            if (!username) return;
+            let list = loadLoginHistory();
+            list = list.filter(u => u !== username);
+            list.unshift(username);
+            if (list.length > MAX_LOGIN_HISTORY) list.pop();
+            saveLoginHistory(list);
+            refreshLoginDatalist();
+        }
+
+        function refreshLoginDatalist() {
+            const datalist = document.getElementById('loginUsernameList');
+            const list = loadLoginHistory();
+            datalist.innerHTML = '';
+            list.forEach(u => {
+                const option = document.createElement('option');
+                option.value = u;
+                datalist.appendChild(option);
+            });
+        }
+
+        function togglePassword() {
+            const pwdInput = document.getElementById('password');
+            const type = pwdInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            pwdInput.setAttribute('type', type);
+        }
+
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('errorMsg');
+            if (!username || !password) {
+                errorDiv.style.display = 'block';
+                errorDiv.textContent = 'Veuillez remplir tous les champs';
+                return;
+            }
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    addToLoginHistory(username);
+                    window.location.href = '/';
+                } else {
+                    errorDiv.style.display = 'block';
+                    errorDiv.textContent = data.message || 'Identifiants invalides';
+                }
+            } catch(e) {
+                errorDiv.style.display = 'block';
+                errorDiv.textContent = 'Erreur de connexion au serveur';
+            }
+        }
+
+        // Gestion modal inscription
+        const modal = document.getElementById('registerModal');
+        const showBtn = document.getElementById('showRegisterBtn');
+        const closeSpan = document.querySelector('.close-modal');
+        showBtn.onclick = () => modal.style.display = 'flex';
+        closeSpan.onclick = () => modal.style.display = 'none';
+        window.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+
+        document.getElementById('doRegisterBtn').onclick = async () => {
+            const username = document.getElementById('regUsername').value;
+            const password = document.getElementById('regPassword').value;
+            const gitlab_token = document.getElementById('regGitlabToken').value;
+            const errorDiv = document.getElementById('registerError');
+            if (!username || !password) {
+                errorDiv.style.display = 'block';
+                errorDiv.textContent = 'Nom et mot de passe requis';
+                return;
+            }
+            const res = await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password, gitlab_token })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert('Compte créé ! Vous pouvez maintenant vous connecter.');
+                modal.style.display = 'none';
+                document.getElementById('username').value = username;
+                document.getElementById('password').value = '';
+                addToLoginHistory(username);
+            } else {
+                errorDiv.style.display = 'block';
+                errorDiv.textContent = data.message;
+            }
+        };
+
+        document.getElementById('password').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') login();
+        });
+
+        refreshLoginDatalist();
+    </script>
+</body>
+</html>
