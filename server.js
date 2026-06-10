@@ -1,11 +1,15 @@
 const express = require('express');
 const https = require('https');
 const fs = require('fs');
+const path = require('path');
 const session = require('express-session');
 const bcrypt = require('bcrypt');
 const sqlite3 = require('sqlite3').verbose();
+const { execSync } = require('child_process');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
 const app = express();
+const LOG_FILE = './AI_CHANGES.md';
 
 const sslOptions = {
     key: fs.readFileSync('./ssl/key.pem'),
@@ -40,7 +44,13 @@ function requireAdmin(req, res, next) {
     else res.status(403).json({ error: 'Accès refusé – droits administrateur requis' });
 }
 
-// ========== AUTH ==========
+function logAiAction(action, details, user = 'system') {
+    const timestamp = new Date().toISOString();
+    const entry = `\n## ${timestamp} (${user})\n- **Action** : ${action}\n- **Détails** :\n${details}\n---\n`;
+    fs.appendFileSync(LOG_FILE, entry);
+}
+
+// ========== AUTHENTIFICATION ==========
 app.post('/api/register', async (req, res) => {
     const { username, password, gitlab_token } = req.body;
     if (!username || !password) return res.status(400).json({ success: false, message: 'Nom et mot de passe requis' });
@@ -91,7 +101,7 @@ app.put('/api/user/token', requireAuth, async (req, res) => {
     });
 });
 
-// ========== ADMIN USERS ==========
+// ========== ADMIN ==========
 app.get('/api/admin/users', requireAdmin, (req, res) => {
     db.all('SELECT id, username, role, gitlab_token, created_at FROM users', (err, rows) => {
         if (err) return res.status(500).json({ error: 'Erreur base' });
@@ -155,12 +165,9 @@ app.put('/api/user/jira-config', requireAuth, (req, res) => {
         });
 });
 
-// ========== CRÉATION D'UN TICKET JIRA (format ADF) ==========
 app.post('/api/jira/create-issue', requireAuth, async (req, res) => {
     const { projectKey, summary, description } = req.body;
-    if (!projectKey || !summary) {
-        return res.status(400).json({ error: 'Project key et summary requis' });
-    }
+    if (!projectKey || !summary) return res.status(400).json({ error: 'Project key et summary requis' });
     db.get('SELECT jira_url, jira_email, jira_token FROM users WHERE id = ?', [req.session.user.id], async (err, row) => {
         if (err || !row || !row.jira_url || !row.jira_email || !row.jira_token) {
             return res.status(401).json({ error: 'Configuration Jira manquante' });
@@ -173,26 +180,12 @@ app.post('/api/jira/create-issue', requireAuth, async (req, res) => {
                 descriptionField = {
                     type: 'doc',
                     version: 1,
-                    content: [
-                        {
-                            type: 'paragraph',
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: description
-                                }
-                            ]
-                        }
-                    ]
+                    content: [{ type: 'paragraph', content: [{ type: 'text', text: description }] }]
                 };
             }
             const response = await fetch(`${jiraUrl}/rest/api/3/issue`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Basic ${auth}`,
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json', 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     fields: {
                         project: { key: projectKey },
@@ -204,36 +197,25 @@ app.post('/api/jira/create-issue', requireAuth, async (req, res) => {
             });
             const responseText = await response.text();
             let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch(e) {
-                console.error('Réponse non JSON:', responseText);
-                return res.status(500).json({ error: `Réponse Jira invalide: ${responseText.substring(0, 200)}` });
+            try { data = JSON.parse(responseText); } catch(e) {
+                return res.status(500).json({ error: `Réponse Jira invalide: ${responseText.substring(0,200)}` });
             }
             if (response.ok) {
                 res.json({ success: true, key: data.key, url: `${jiraUrl}/browse/${data.key}` });
             } else {
                 let errorMessage = `Erreur Jira ${response.status}: `;
-                if (data.errors) {
-                    errorMessage += JSON.stringify(data.errors);
-                } else if (data.message) {
-                    errorMessage += data.message;
-                } else if (data.errorMessages) {
-                    errorMessage += data.errorMessages.join(', ');
-                } else {
-                    errorMessage += responseText;
-                }
-                console.error('Erreur Jira:', errorMessage);
+                if (data.errors) errorMessage += JSON.stringify(data.errors);
+                else if (data.message) errorMessage += data.message;
+                else if (data.errorMessages) errorMessage += data.errorMessages.join(', ');
+                else errorMessage += responseText;
                 res.status(500).json({ error: errorMessage });
             }
         } catch (error) {
-            console.error('Exception réseau Jira:', error);
             res.status(500).json({ error: `Erreur réseau: ${error.message}` });
         }
     });
 });
 
-// ========== JIRA URL ==========
 app.get('/api/settings/jira-url', (req, res) => {
     db.get('SELECT value FROM settings WHERE key = "jira_url"', (err, row) => {
         if (err || !row) return res.json({ url: 'https://www.atlassian.com/software/jira' });
@@ -243,31 +225,18 @@ app.get('/api/settings/jira-url', (req, res) => {
 
 // ========== HISTORIQUE ==========
 app.get('/api/history', requireAuth, (req, res) => {
-    db.all(
-        `SELECT id, project_name, language, status, message, pipeline_url, timestamp
-         FROM deployments
-         WHERE user_id = ?
-         ORDER BY timestamp DESC
-         LIMIT 50`,
-        [req.session.user.id],
-        (err, rows) => {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json(rows);
-        }
-    );
+    db.all(`SELECT id, project_name, language, status, message, pipeline_url, timestamp FROM deployments WHERE user_id = ? ORDER BY timestamp DESC LIMIT 50`, [req.session.user.id], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
 });
 
 app.post('/api/history', requireAuth, (req, res) => {
     const { projectName, language, status, message, pipelineUrl } = req.body;
-    db.run(
-        `INSERT INTO deployments (user_id, project_name, language, status, message, pipeline_url)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [req.session.user.id, projectName, language, status, message, pipelineUrl || null],
-        function(err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true, id: this.lastID });
-        }
-    );
+    db.run(`INSERT INTO deployments (user_id, project_name, language, status, message, pipeline_url) VALUES (?, ?, ?, ?, ?, ?)`, [req.session.user.id, projectName, language, status, message, pipelineUrl || null], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, id: this.lastID });
+    });
 });
 
 app.delete('/api/history', requireAuth, (req, res) => {
@@ -287,18 +256,13 @@ app.get('/api/user/projects', requireAuth, (req, res) => {
 
 app.post('/api/user/projects', requireAuth, (req, res) => {
     const { gitlab_id, name, url, language, is_favorite } = req.body;
-    db.run(
-        `INSERT OR REPLACE INTO projects (user_id, gitlab_id, name, url, language, is_favorite)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [req.session.user.id, gitlab_id, name, url, language, is_favorite ? 1 : 0],
-        function(err) {
-            if (err) return res.status(500).json({ error: err.message });
-            res.json({ success: true, id: this.lastID });
-        }
-    );
+    db.run(`INSERT OR REPLACE INTO projects (user_id, gitlab_id, name, url, language, is_favorite) VALUES (?, ?, ?, ?, ?, ?)`, [req.session.user.id, gitlab_id, name, url, language, is_favorite ? 1 : 0], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, id: this.lastID });
+    });
 });
 
-// ========== MÉTRIQUES ==========
+// ========== MÉTRIQUES PROMETHEUS ==========
 const PROMETHEUS_URL = 'http://192.168.49.2:32648';
 app.get('/api/real-metrics', async (req, res) => {
     try {
@@ -469,8 +433,7 @@ build_android:
 deploy_android:
   stage: deploy
   script:
-    - echo "APK prêt pour téléchargement"
-`,
+    - echo "APK prêt pour téléchargement"`,
 
     js: `stages:
   - test
@@ -484,7 +447,6 @@ test_js:
   script:
     - npm ci || echo "npm ci ignoré"
     - npm test || echo "Tests ignorés"
-    - npm run test:coverage || echo "Pas de script test:coverage"
 
 security_js:
   stage: security
@@ -566,25 +528,30 @@ deploy_python:
         echo "Pas de déploiement Kubernetes, job ignoré." ;
       fi
   tags:
-    - ${RUNNER_TAG}`
+    - ${RUNNER_TAG}`,
 };
 
 // ========== ROUTES GITLAB ==========
+function detectLanguageFromName(name) {
+    const lower = name.toLowerCase();
+    if (lower.includes('java')) return 'java';
+    if (lower.includes('php')) return 'php';
+    if (lower.includes('android')) return 'android';
+    if (lower.includes('js') || lower.includes('javascript')) return 'js';
+    if (lower.includes('python')) return 'python';
+    return 'java';
+}
+
 app.get('/api/gitlab/projects', requireAuth, async (req, res) => {
     const token = req.session.user.gitlab_token;
-    if (!token) return res.status(400).json({ error: 'Token GitLab manquant. Veuillez configurer votre token dans votre profil.' });
+    if (!token) return res.status(400).json({ error: 'Token GitLab manquant' });
     try {
-        const resp = await fetch(`https://gitlab.com/api/v4/projects?membership=true&per_page=100`, {
-            headers: { 'PRIVATE-TOKEN': token }
-        });
+        const resp = await fetch(`https://gitlab.com/api/v4/projects?membership=true&per_page=100`, { headers: { 'PRIVATE-TOKEN': token } });
         const projects = await resp.json();
         if (!Array.isArray(projects)) throw new Error('Réponse invalide');
         const filtered = projects.map(p => ({ id: p.id, name: p.name, url: p.web_url, language: detectLanguageFromName(p.name) }));
-        // Mise en cache locale (optionnel)
         filtered.forEach(proj => {
-            db.run(`INSERT OR IGNORE INTO projects (user_id, gitlab_id, name, url, language)
-                    VALUES (?, ?, ?, ?, ?)`,
-                [req.session.user.id, proj.id, proj.name, proj.url, proj.language]);
+            db.run(`INSERT OR IGNORE INTO projects (user_id, gitlab_id, name, url, language) VALUES (?, ?, ?, ?, ?)`, [req.session.user.id, proj.id, proj.name, proj.url, proj.language]);
         });
         res.json(filtered);
     } catch (err) {
@@ -607,53 +574,36 @@ app.post('/api/generate-pipeline', requireAuth, (req, res) => {
 app.post('/api/run-pipeline', requireAuth, async (req, res) => {
     const { language, projectName } = req.body;
     const token = req.session.user.gitlab_token;
-    if (!token) return res.json({ success: false, message: 'Token GitLab non configuré dans votre profil' });
+    if (!token) return res.json({ success: false, message: 'Token GitLab non configuré' });
     try {
-        const searchResp = await fetch(`https://gitlab.com/api/v4/projects?search=${encodeURIComponent(projectName)}`, {
-            headers: { 'PRIVATE-TOKEN': token }
-        });
+        const searchResp = await fetch(`https://gitlab.com/api/v4/projects?search=${encodeURIComponent(projectName)}`, { headers: { 'PRIVATE-TOKEN': token } });
         const searchText = await searchResp.text();
         if (!searchResp.ok) throw new Error(`GitLab search error ${searchResp.status}: ${searchText}`);
         const projects = JSON.parse(searchText);
         const project = projects.find(p => p.name === projectName || p.path === projectName || p.path_with_namespace?.includes(projectName));
         if (!project) throw new Error(`Projet "${projectName}" non trouvé sur GitLab`);
-        console.log("✅ Projet trouvé:", project.name);
         let branch = 'main';
-        const branchResp = await fetch(`https://gitlab.com/api/v4/projects/${project.id}/repository/branches`, {
-            headers: { 'PRIVATE-TOKEN': token }
-        });
+        const branchResp = await fetch(`https://gitlab.com/api/v4/projects/${project.id}/repository/branches`, { headers: { 'PRIVATE-TOKEN': token } });
         if (branchResp.ok) {
             const branches = await branchResp.json();
-            console.log("Branches:", branches.map(b => b.name));
             const hasMain = branches.some(b => b.name === 'main');
             const hasMaster = branches.some(b => b.name === 'master');
             if (!hasMain && hasMaster) branch = 'master';
         }
-        console.log("📌 Branche utilisée:", branch);
         const pipelineYaml = pipelines[language];
         if (!pipelineYaml) throw new Error(`Langage ${language} non supporté`);
         const encoded = Buffer.from(pipelineYaml).toString('base64');
         const filePath = '.gitlab-ci.yml';
         let fileExists = false;
-        const checkResp = await fetch(`https://gitlab.com/api/v4/projects/${project.id}/repository/files/${encodeURIComponent(filePath)}?ref=${branch}`, {
-            headers: { 'PRIVATE-TOKEN': token }
-        });
+        const checkResp = await fetch(`https://gitlab.com/api/v4/projects/${project.id}/repository/files/${encodeURIComponent(filePath)}?ref=${branch}`, { headers: { 'PRIVATE-TOKEN': token } });
         fileExists = checkResp.ok;
-        console.log("📄 Fichier existe:", fileExists);
         const method = fileExists ? 'PUT' : 'POST';
         const updateResp = await fetch(`https://gitlab.com/api/v4/projects/${project.id}/repository/files/${encodeURIComponent(filePath)}`, {
             method: method,
             headers: { 'PRIVATE-TOKEN': token, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                branch: branch,
-                content: encoded,
-                encoding: 'base64',
-                commit_message: `Pipeline généré (${language})`
-            })
+            body: JSON.stringify({ branch: branch, content: encoded, encoding: 'base64', commit_message: `Pipeline généré (${language})` })
         });
-        const updateText = await updateResp.text();
-        if (!updateResp.ok) throw new Error(`Erreur fichier GitLab ${updateResp.status}: ${updateText}`);
-        console.log("✅ .gitlab-ci.yml mis à jour");
+        if (!updateResp.ok) throw new Error(`Erreur fichier GitLab ${updateResp.status}: ${await updateResp.text()}`);
         const triggerResp = await fetch(`https://gitlab.com/api/v4/projects/${project.id}/pipeline`, {
             method: 'POST',
             headers: { 'PRIVATE-TOKEN': token, 'Content-Type': 'application/json' },
@@ -662,33 +612,19 @@ app.post('/api/run-pipeline', requireAuth, async (req, res) => {
         const triggerText = await triggerResp.text();
         let triggerData;
         try { triggerData = JSON.parse(triggerText); } catch { throw new Error(`Réponse invalide GitLab: ${triggerText}`); }
-        console.log("📊 Trigger réponse:", triggerData);
         if (!triggerResp.ok) throw new Error(typeof triggerData.message === 'string' ? triggerData.message : JSON.stringify(triggerData));
         res.json({ success: true, pipelineUrl: triggerData.web_url });
     } catch (err) {
-        console.error("❌ ERREUR COMPLETE:", err);
-        console.error("STACK:", err.stack);
-        res.json({ success: false, message: err.message || JSON.stringify(err) });
+        console.error("Erreur run-pipeline:", err);
+        res.json({ success: false, message: err.message });
     }
 });
 
-function detectLanguageFromName(name) {
-    const lower = name.toLowerCase();
-    if (lower.includes('java')) return 'java';
-    if (lower.includes('php')) return 'php';
-    if (lower.includes('android')) return 'android';
-    if (lower.includes('js') || lower.includes('javascript')) return 'js';
-    if (lower.includes('python')) return 'python';
-    return 'java';
-}
-
-
-
-// ========== IA ASSISTANT ==========
+// ========== IA ASSISTANT (MCP) ==========
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 const MISTRAL_API_URL = 'https://api.mistral.ai/v1/chat/completions';
 
-const pipelineTemplates = {
+const pipelineTemplates = { 
     angular: `stages:
   - test
   - build
@@ -728,14 +664,14 @@ test:
   image: node:18
   script:
     - npm ci
-    - npm run test -- --watch=false
+    - npm run test -- --watchAll=false
 
 build:
   stage: build
   image: node:18
   script:
     - npm ci
-    - npm run build --prod
+    - npm run build
   artifacts:
     paths:
       - build/
@@ -761,7 +697,7 @@ build:
   image: node:18
   script:
     - npm ci
-    - npm run build --prod
+    - npm run build
   artifacts:
     paths:
       - dist/
@@ -775,16 +711,17 @@ test:
   stage: test
   image: golang:1.21
   script:
-    - go test ./...
+    - go test -v ./...
 
 build:
   stage: build
   image: golang:1.21
   script:
-    - go build -o app
+    - go build -o myapp ./cmd/...
   artifacts:
     paths:
-      - app`,
+      - myapp
+    expire_in: 1 week`,
 
     rust: `stages:
   - test
@@ -794,7 +731,7 @@ test:
   stage: test
   image: rust:latest
   script:
-    - cargo test
+    - cargo test --verbose
 
 build:
   stage: build
@@ -803,7 +740,8 @@ build:
     - cargo build --release
   artifacts:
     paths:
-      - target/release/`,
+      - target/release/
+    expire_in: 1 week`,
 
     dotnet: `stages:
   - test
@@ -813,37 +751,37 @@ test:
   stage: test
   image: mcr.microsoft.com/dotnet/sdk:8.0
   script:
-    - dotnet test
+    - dotnet test --no-build --verbosity normal
 
 build:
   stage: build
   image: mcr.microsoft.com/dotnet/sdk:8.0
   script:
-    - dotnet publish -c Release -o publish
+    - dotnet build --configuration Release
   artifacts:
     paths:
-      - publish/`
+      - bin/Release/
+    expire_in: 1 week`
 };
 
 function detectLanguageFromPrompt(prompt) {
     const lower = prompt.toLowerCase();
     if (lower.includes('angular')) return 'angular';
     if (lower.includes('react')) return 'react';
-    if (lower.includes('vue') || lower.includes('vue.js')) return 'vue';
-    if (lower.includes('go') || lower.includes('golang')) return 'go';
+    if (lower.includes('vue')) return 'vue';
+    if (lower.includes('go')) return 'go';
     if (lower.includes('rust')) return 'rust';
     if (lower.includes('.net') || lower.includes('dotnet')) return 'dotnet';
     return null;
 }
+
 function formatYaml(yamlStr) {
     if (!yamlStr || !yamlStr.includes('stages:')) return yamlStr;
     const lines = yamlStr.split(/\r?\n/);
     const result = [];
-    let previousWasEmpty = false;
     for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         const trimmed = line.trim();
-        // Détecter le début d'une nouvelle section (stages:, cache:, test:, build:, etc.)
         const isSection = /^(stages:|cache:|test:|build:|deploy:|variables:|before_script:|after_script:)/.test(trimmed);
         if (isSection && result.length > 0 && result[result.length-1] !== '') {
             result.push('');
@@ -853,18 +791,146 @@ function formatYaml(yamlStr) {
     return result.join('\n').replace(/\n\s*\n\s*\n/g, '\n\n');
 }
 
-const PROJECT_CONTEXT = `Tu es un assistant DevOps spécialiste du projet "Sartex DevOps Platform".
+const PROJECT_CONTEXT = `Tu es un assistant DevOps pour la plateforme Sartex DevOps Platform.
 
-Fonctionnalités de la plateforme :
-- Authentification, sessions
-- Token GitLab, consultation projets
-- Déploiement automatique (5 langages : Java, PHP, Android, JS, Python)
-- Métriques Kubernetes (Prometheus)
-- Historique SQLite
-- Intégration Jira
-- Administration utilisateurs
+**FONCTIONNALITÉS PRINCIPALES** :
+- Répondre aux questions sur la plateforme (authentification, GitLab, déploiement, Prometheus, Jira, etc.)
+- Fournir des templates de pipeline GitLab CI/CD pour différents langages
+- Analyser les erreurs de pipeline et proposer des corrections automatiques
+- AJOUTER de nouveaux pipelines dans le fichier server.js (avec ou sans template)
+- SUPPRIMER des pipelines existants dans server.js
 
-Réponds de manière claire et concise en français. Si l'utilisateur pose une question sur les pipelines, oriente-le vers les templates disponibles (Angular, React, Vue, Go, Rust, .NET).`;
+**RÈGLE DE LANGUE** :
+- Si l'utilisateur écrit en ANGLAIS, réponds en ANGLAIS.
+- Si l'utilisateur écrit en FRANÇAIS, réponds en FRANÇAIS.
+
+**RÈGLES DE DÉTECTION AUTOMATIQUE** :
+1. Si le message contient "ERROR:", "failed:", "command not found", "exit code", "[ERROR]", "Unknown lifecycle" → c'est une ERREUR → réponds avec le format [TARGET_FILE:server.js]
+2. Si le message contient "ajoute", "supprime", "crée", "remove", "delete", "add" → c'est une COMMANDE d'ajout/suppression → réponds avec le format approprié
+3. Si le message contient "donne moi", "pipeline", "template", "yaml" → c'est une DEMANDE DE PIPELINE → réponds avec le template YAML
+4. Si le message contient "?", "comment", "pourquoi", "configure", "how to" → c'est une QUESTION → réponds normalement
+
+**PARTIE 1 : CORRECTION DES ERREURS (ancien format)** :
+Quand l'utilisateur colle une erreur de pipeline, réponds avec ce format EXACT :
+
+[TARGET_FILE:server.js]
+[SEARCH_CODE]
+    - [la commande erronée exacte]
+[REPLACE_CODE]
+    - [la commande corrigée qui fonctionne]
+[END_FIX]
+
+Exemples :
+- "composer unknow" → REPLACE_CODE: "    - composer install || echo 'Composer installé'"
+- "mvn unknown-command" → REPLACE_CODE: "    - mvn clean test || echo 'Tests ignorés'"
+- "npm fake" → REPLACE_CODE: "    - npm install || echo 'Installation npm'"
+
+**PARTIE 2 : DEMANDE DE PIPELINE (ancien format)** :
+Quand l'utilisateur demande un pipeline (ex: "donne moi un pipeline React" ou "give me a React pipeline"), réponds avec le template YAML correspondant.
+Langages disponibles : Java, PHP, Python, Node.js, Angular, React, Vue, Go, Rust, .NET, Android, JS.
+
+**PARTIE 3 : AJOUT DE PIPELINE (NOUVEAU)** :
+Quand l'utilisateur dit "ajoute le pipeline pour [langage]" :
+
+- Si l'utilisateur FOURNIT le template, utilise-le.
+- Si l'utilisateur ne fournit PAS de template, utilise les templates par défaut :
+
+Pour "flutter" :
+flutter: ` + "`" + `stages:
+  - test
+  - build
+
+test:
+  stage: test
+  image: cirrusci/flutter:stable
+  script:
+    - flutter test
+
+build:
+  stage: build
+  script:
+    - flutter build apk
+  artifacts:
+    paths:
+      - build/app/outputs/flutter-apk/
+    expire_in: 1 week` + "`" + `
+
+Pour "nextjs" :
+nextjs: ` + "`" + `stages:
+  - test
+  - build
+
+cache:
+  paths:
+    - node_modules/
+    - .next/cache/
+
+test:
+  stage: test
+  image: node:18
+  script:
+    - npm ci
+    - npm run test
+
+build:
+  stage: build
+  image: node:18
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - .next/
+    expire_in: 1 week` + "`" + `
+
+Pour "laravel" :
+laravel: ` + "`" + `stages:
+  - test
+  - build
+
+test:
+  stage: test
+  image: php:8.2
+  before_script:
+    - apt-get update && apt-get install -y git unzip
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - composer install
+  script:
+    - php artisan test
+
+build:
+  stage: build
+  script:
+    - echo "Build terminé"` + "`" + `
+
+Format de réponse :
+[TARGET_FILE:server.js]
+[SEARCH_CODE]
+AJOUTER_PIPELINE
+[REPLACE_CODE]
+    nom_langage: ` + "`" + `(contenu YAML)` + "`" + `,
+[END_FIX]
+
+**PARTIE 4 : SUPPRESSION DE PIPELINE (NOUVEAU)** :
+Quand l'utilisateur dit "supprime le pipeline [langage]" ou "remove [language] pipeline", utilise :
+
+[TARGET_FILE:server.js]
+[SEARCH_CODE]
+SUPPRIMER_PIPELINE
+[REPLACE_CODE]
+    nom_du_langage
+[END_FIX]
+
+**PARTIE 5 : QUESTIONS GÉNÉRALES (ancien format)** :
+Réponds dans la MÊME LANGUE que la question de l'utilisateur.
+
+**IMPORTANT** :
+- Pour les corrections d'erreurs, réponds UNIQUEMENT avec le format structuré [TARGET_FILE:server.js]
+- Pour les ajouts et suppressions, réponds UNIQUEMENT avec le format structuré
+- Pour les demandes de pipeline, réponds avec le YAML directement
+- Pour les questions générales, réponds en texte clair
+- Vérifie toujours si un pipeline existe déjà avant de l'ajouter
+- Ne supprime un pipeline que s'il existe vraiment`;
 
 app.post('/api/ai/ask', requireAuth, async (req, res) => {
     const { prompt } = req.body;
@@ -874,13 +940,10 @@ app.post('/api/ai/ask', requireAuth, async (req, res) => {
     if (isPipelineRequest) {
         const lang = detectLanguageFromPrompt(prompt);
         if (lang && pipelineTemplates[lang]) {
-            // Appliquer le formatage (ajout de lignes vides) et retourner
             const yaml = formatYaml(pipelineTemplates[lang]);
             return res.json({ success: true, reply: yaml });
-        } else {
-            if (!MISTRAL_API_KEY) {
-                return res.json({ success: true, reply: "Désolé, je n'ai pas de template pour ce langage. Vous pouvez me demander pour Angular, React, Vue, Go, Rust ou .NET." });
-            }
+        } else if (!MISTRAL_API_KEY) {
+            return res.json({ success: true, reply: "Désolé, je n'ai pas de template pour ce langage. Langages disponibles : Angular, React, Vue, Go, Rust, .NET." });
         }
     }
 
@@ -895,8 +958,8 @@ app.post('/api/ai/ask', requireAuth, async (req, res) => {
             body: JSON.stringify({
                 model: 'mistral-tiny',
                 messages: [ { role: 'system', content: PROJECT_CONTEXT }, { role: 'user', content: prompt } ],
-                temperature: 0.7,
-                max_tokens: 500
+                temperature: 0.2,
+                max_tokens: 800
             })
         });
         const data = await response.json();
@@ -909,7 +972,257 @@ app.post('/api/ai/ask', requireAuth, async (req, res) => {
     }
 });
 
+app.post('/api/ai/apply-fix', requireAuth, (req, res) => {
+    const { rawAiReply } = req.body;
+    if (!rawAiReply) return res.json({ success: false, message: "Aucune réponse de l'IA reçue." });
 
+    try {
+        const fileMatch = rawAiReply.match(/\[TARGET_FILE:\s*([a-zA-Z0-9_\.\/-]+)\]/);
+        const searchMatch = rawAiReply.match(/\[SEARCH_CODE\]\n([\s\S]*?)\n\[REPLACE_CODE\]/);
+        const replaceMatch = rawAiReply.match(/\[REPLACE_CODE\]\n([\s\S]*?)\n\[END_FIX\]/);
+
+        if (!fileMatch || !searchMatch || !replaceMatch) {
+            return res.json({ success: false, message: "Format de correctif structuré introuvable." });
+        }
+
+        const targetFile = fileMatch[1].trim();
+        const filePath = path.join(__dirname, targetFile);
+        const searchCode = searchMatch[1].trim();
+        let replaceCode = replaceMatch[1].trim();
+
+        if (!filePath.startsWith(__dirname)) {
+            return res.json({ success: false, message: "Accès refusé." });
+        }
+
+        if (!fs.existsSync(filePath)) {
+            return res.json({ success: false, message: `Fichier ${targetFile} introuvable.` });
+        }
+
+
+        if (searchCode === 'AJOUTER_PIPELINE' || searchCode.includes('AJOUTER_PIPELINE')) {
+            let content = fs.readFileSync(filePath, 'utf8');
+            
+            const startIndex = content.indexOf('const pipelines = {');
+            if (startIndex === -1) {
+                return res.json({ success: false, message: "const pipelines = { non trouvé" });
+            }
+            
+            let braceCount = 0;
+            let endIndex = -1;
+            for (let i = startIndex; i < content.length; i++) {
+                if (content[i] === '{') braceCount++;
+                if (content[i] === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                        endIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            if (endIndex === -1) {
+                return res.json({ success: false, message: "Structure pipelines invalide" });
+            }
+            
+            const beforePipelines = content.substring(0, startIndex);
+            let pipelinesContent = content.substring(startIndex + 'const pipelines = '.length, endIndex);
+            const afterPipelines = content.substring(endIndex + 1);
+            
+            const langName = replaceCode.match(/^\s*([a-zA-Z0-9_]+):/)?.[1];
+            
+            if (langName && pipelinesContent.includes(`${langName}:`)) {
+                return res.json({ success: false, message: `Le pipeline "${langName}" existe déjà.` });
+            }
+            
+            let newPipeline = replaceCode.trim();
+            if (!newPipeline.endsWith(',')) newPipeline += ',';
+            
+            let newPipelinesContent;
+            const pipelinesTrimmed = pipelinesContent.trim();
+            
+            if (pipelinesTrimmed === '{' || pipelinesTrimmed === '') {
+                newPipelinesContent = '{\n    ' + newPipeline + '\n';
+            } else {
+                newPipelinesContent = pipelinesContent.slice(0, -1) + ',\n    ' + newPipeline + '\n}';
+            }
+            
+            if (!newPipelinesContent.trim().endsWith('}')) {
+                newPipelinesContent = newPipelinesContent.trim();
+                if (!newPipelinesContent.endsWith('}')) {
+                    newPipelinesContent = newPipelinesContent + '\n}';
+                }
+            }
+            
+            const newContent = beforePipelines + 'const pipelines = ' + newPipelinesContent + afterPipelines;
+            
+            fs.writeFileSync(filePath, newContent, 'utf8');
+            logAiAction("ADD_PIPELINE", `Pipeline ajouté : ${langName || 'inconnu'}`, req.session.user.username);
+            return res.json({ success: true, message: `Pipeline "${langName}" ajouté avec succès ! Redémarrez le serveur.` });
+        } 
+        if (searchCode === 'SUPPRIMER_PIPELINE' || searchCode.includes('SUPPRIMER_PIPELINE')) {
+            let content = fs.readFileSync(filePath, 'utf8');
+            let langName = replaceCode.trim();
+            if (!langName) {
+                return res.json({ success: false, message: "Nom du pipeline à supprimer non trouvé." });
+            }
+            
+            const startIndex = content.indexOf('const pipelines = {');
+            if (startIndex === -1) {
+                return res.json({ success: false, message: "const pipelines = { non trouvé" });
+            }
+            
+            let braceCount = 0;
+            let endIndex = -1;
+            for (let i = startIndex; i < content.length; i++) {
+                if (content[i] === '{') braceCount++;
+                if (content[i] === '}') {
+                    braceCount--;
+                    if (braceCount === 0) {
+                        endIndex = i;
+                        break;
+                    }
+                }
+            }
+            
+            if (endIndex === -1) {
+                return res.json({ success: false, message: "Structure pipelines invalide" });
+            }
+            
+            const beforePipelines = content.substring(0, startIndex);
+            let pipelinesContent = content.substring(startIndex + 'const pipelines = '.length, endIndex);
+            const afterPipelines = content.substring(endIndex + 1);
+            
+            if (!pipelinesContent.includes(`${langName}:`)) {
+                return res.json({ success: false, message: `Pipeline "${langName}" non trouvé.` });
+            }
+            
+            const lines = pipelinesContent.split('\n');
+            let newLines = [];
+            let skipUntilNextPipeline = false;
+            let found = false;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                
+                if (!skipUntilNextPipeline && line.trim().startsWith(`${langName}:`)) {
+                    skipUntilNextPipeline = true;
+                    found = true;
+                    continue;
+                }
+                
+                if (skipUntilNextPipeline) {
+                    // Vérifier si on a atteint la fin du template (ligne qui contient `),` ou `\``)
+                    if (line.trim().endsWith('`,') || line.trim().endsWith('`') || 
+                        (line.includes('`') && i > 0 && lines[i-1].includes('`'))) {
+                        skipUntilNextPipeline = false;
+                    }
+                    continue;
+                }
+                
+                newLines.push(line);
+            }
+            
+            if (!found) {
+                return res.json({ success: false, message: `Pipeline "${langName}" non trouvé.` });
+            }
+            
+            let newPipelinesContent = newLines.join('\n');
+            
+            newPipelinesContent = newPipelinesContent.replace(/,\n\s*,/g, ',\n');
+            newPipelinesContent = newPipelinesContent.replace(/,\n\s*}/, '\n}');
+            newPipelinesContent = newPipelinesContent.replace(/\n\s*\n\s*\n/g, '\n\n');
+            
+            if (!newPipelinesContent.trim().endsWith('}')) {
+                newPipelinesContent = newPipelinesContent.trim();
+                if (!newPipelinesContent.endsWith('}')) {
+                    newPipelinesContent = newPipelinesContent + '\n}';
+                }
+            }
+            
+            const newContent = beforePipelines + 'const pipelines = ' + newPipelinesContent + afterPipelines;
+            
+            fs.writeFileSync(filePath, newContent, 'utf8');
+            logAiAction("REMOVE_PIPELINE", `Pipeline supprimé : ${langName}`, req.session.user.username);
+            return res.json({ success: true, message: `Pipeline "${langName}" supprimé avec succès ! Redémarrez le serveur.` });
+        } 
+
+        let fileContent = fs.readFileSync(filePath, 'utf8');
+        const cleanContent = fileContent.replace(/\r\n/g, '\n');
+        const cleanSearch = searchCode.replace(/\r\n/g, '\n');
+
+        if (!cleanContent.includes(cleanSearch)) {
+            return res.json({ success: false, message: `Bloc original introuvable dans ${targetFile}.` });
+        }
+
+        let updatedContent;
+        if (!replaceCode || replaceCode.trim() === '') {
+            const escapedSearch = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const searchRegex = new RegExp(`^[ \\t]*${escapedSearch}[ \\t]*\\r?\\n`, 'm');
+            updatedContent = cleanContent.replace(searchRegex, '');
+        } else {
+            updatedContent = cleanContent.replace(cleanSearch, replaceCode);
+        }
+
+        fs.writeFileSync(filePath, updatedContent, 'utf8');
+        logAiAction("AUTO_FIX", `Fichier corrigé : ${targetFile}`, req.session.user.username);
+        return res.json({ success: true, message: `Fichier ${targetFile} mis à jour !` });
+
+    } catch (error) {
+        console.error("Erreur apply-fix:", error);
+        return res.json({ success: false, message: "Erreur interne : " + error.message });
+    }
+});
+
+app.post('/api/ai/analyze-error', requireAuth, async (req, res) => {
+    const { errorLog, context } = req.body;
+    if (!errorLog) return res.status(400).json({ error: 'Log d’erreur requis' });
+    if (!MISTRAL_API_KEY) return res.status(500).json({ error: 'Clé API Mistral non configurée' });
+
+    const prompt = `Analyse cette erreur et réponds UNIQUEMENT avec le format structuré suivant :
+
+[TARGET_FILE:server.js]
+[SEARCH_CODE]
+la ligne exacte erronée
+[REPLACE_CODE]
+la ligne corrigée
+[END_FIX]
+
+Erreur : ${errorLog}`;
+
+    try {
+        const response = await fetch(MISTRAL_API_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${MISTRAL_API_KEY}` },
+            body: JSON.stringify({
+                model: 'mistral-tiny',
+                messages: [ { role: 'system', content: PROJECT_CONTEXT }, { role: 'user', content: prompt } ],
+                temperature: 0.1,
+                max_tokens: 500
+            })
+        });
+        const data = await response.json();
+        const reply = data.choices[0].message.content;
+        logAiAction('Analyse erreur', `Erreur: ${errorLog.substring(0, 200)}...\nRéponse IA: ${reply}`, req.session.user.username);
+        res.json({ success: true, analysis: reply });
+    } catch (err) {
+        console.error('Erreur analyse IA:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/ai/check-file', requireAuth, (req, res) => {
+    const { filePath } = req.body;
+    const allowed = ['server.js', 'index.html', 'login.html', 'init-db.js'];
+    if (!allowed.includes(filePath)) return res.json({ exists: false });
+    const fullPath = path.join(__dirname, filePath);
+    res.json({ exists: fs.existsSync(fullPath) });
+});
+
+app.get('/api/ai/history', requireAdmin, (req, res) => {
+    if (!fs.existsSync(LOG_FILE)) return res.json({ logs: '' });
+    const content = fs.readFileSync(LOG_FILE, 'utf8');
+    res.json({ logs: content });
+});
 
 app.get('/api/metrics', (req, res) => {
     res.json({

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Sartex DevOps Platform | PFE Chayma Skandrani</title>
+
     <style>
         * {
             margin: 0;
@@ -411,6 +412,7 @@
                 bottom: auto;
                 top: auto;
             }
+
             .controls {
                 position: relative;
                 transform: none;
@@ -418,19 +420,23 @@
                 width: calc(100% - 40px);
                 bottom: auto;
             }
+
             body {
                 overflow-y: auto;
                 height: auto;
             }
+
             .ui-overlay {
                 position: relative;
                 display: flex;
                 flex-direction: column;
                 padding: 10px;
             }
+
             .header {
                 position: relative;
             }
+
             canvas {
                 position: fixed;
             }
@@ -441,10 +447,12 @@
                 gap: 8px;
                 padding: 8px 12px;
             }
+
             .lang-btn {
                 padding: 4px 10px;
                 font-size: 9px;
             }
+
             .deploy-btn, .reset-btn {
                 padding: 4px 12px;
                 font-size: 10px;
@@ -485,8 +493,8 @@
             background: #0F172A;
             padding: 20px;
             border-radius: 12px;
-            width: 450px;
-            max-width: 90%;
+            width: 750px;
+            max-width: 95%;
             border-top: 4px solid #3B82F6;
         }
 
@@ -532,10 +540,13 @@
         }
     </style>
 </head>
+
 <body>
+
     <div id="notification">✅ Déploiement réussi !</div>
+
     <div class="ui-overlay">
-        <!-- HEADER -->
+
         <div class="header">
             <div class="logo">
                 <img src="logo-sartex.png" alt="Sartex" style="height: 40px; width: auto;">
@@ -544,14 +555,16 @@
                     <p>DevOps Platform</p>
                 </div>
             </div>
+
             <div class="status-header">
                 <div id="status-message">✅ Prêt à déployer</div>
                 <div id="last-deployment">📋 Aucun déploiement encore</div>
+
                 <div>
                     <button id="jiraConfigBtn" class="jira-btn">⚙️ Config Jira</button>
                     <button id="createTicketBtn" class="jira-btn">🎫 Nouveau ticket</button>
                     <button id="jiraBtn" class="jira-btn">🔗 Ouvrir Jira</button>
-                    <button id="profileBtn" class="profile-btn">👤 Profil</button>     
+                    <button id="profileBtn" class="profile-btn">👤 Profil</button>
                     <button id="logoutBtn" class="logout-btn">🚪 Déconnexion</button>
                     <button id="adminBtn" class="admin-btn" style="display: none;">👥 Admin</button>
                     <button id="aiAssistantBtn" class="jira-btn">🤖 Assistant IA</button>
@@ -627,15 +640,19 @@
             <label>URL de votre instance Jira</label>
             <input type="text" id="jiraUrl" list="jiraUrlHistory" placeholder="https://monentreprise.atlassian.net">
             <datalist id="jiraUrlHistory"></datalist>
+
             <label>Email du compte Jira</label>
             <input type="email" id="jiraEmail" list="jiraEmailHistory" placeholder="email@example.com">
             <datalist id="jiraEmailHistory"></datalist>
+
             <label>Token API Jira</label>
             <input type="password" id="jiraToken" placeholder="Votre token API (généré dans Jira)">
+
             <div style="display: flex; justify-content: space-between; align-items: center;">
                 <button id="saveJiraConfigBtn" style="flex:1; margin-right:5px;">💾 Enregistrer</button>
                 <button id="clearJiraHistoryBtn" style="background:#F59E0B; color:#000; padding:8px; margin-top:10px; width:auto;">🗑️ Effacer historique</button>
             </div>
+
             <div id="jiraConfigMsg" style="color:#3B82F6; margin-top:10px;"></div>
         </div>
     </div>
@@ -648,19 +665,51 @@
             <label>Clé du projet (ex: PROJ)</label>
             <input type="text" id="ticketProjectKey" list="projectKeyList" placeholder="PROJ">
             <datalist id="projectKeyList"></datalist>
+
             <label>Résumé</label>
             <input type="text" id="ticketSummary" list="summaryList" placeholder="Résumé du ticket">
             <datalist id="summaryList"></datalist>
+
             <label>Description (optionnel)</label>
             <textarea id="ticketDescription" rows="3" placeholder="Description détaillée..."></textarea>
+
             <button id="createTicketSubmitBtn">🚀 Créer le ticket</button>
             <div id="ticketResult" style="margin-top:10px;"></div>
         </div>
     </div>
 
+    <!-- MODAL ASSISTANT IA (MCP) -->
+    <div id="aiModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal" id="closeAiModal">&times;</span>
+            <h3>🤖 Assistant DevOps </h3>
+
+            <div id="aiChatLog" style="height: 400px; overflow-y: auto; background: #1E293B; padding: 10px; border-radius: 8px; margin-bottom: 10px; color: white;">
+                <p><em>Posez-moi une question sur votre projet, demandez un pipeline, ou collez une erreur pour obtenir un correctif.</em></p>
+            </div>
+
+            <div style="margin-bottom: 10px;">
+                <textarea id="aiPrompt" rows="3" placeholder="Ex: Mon pipeline Java échoue avec 'entrypoint unknown'..." style="width: 100%; background: #1E293B; color: white; border: 1px solid #3B82F6; border-radius: 5px; padding: 10px; resize: vertical;"></textarea>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <button id="aiSendBtn" style="background: #3B82F6; color: white; border: none; padding: 10px 16px; border-radius: 5px; cursor: pointer;">Envoyer</button>
+                <button id="aiAnalyzeErrorBtn" style="background: #F59E0B; color: #000; border: none; padding: 10px 16px; border-radius: 5px; cursor: pointer;">🔍 Analyser l'erreur</button>
+                <button id="aiApplyFixBtn" style="background: #10B981; color: white; border: none; padding: 10px 16px; border-radius: 5px; cursor: pointer; display: none;">✅ Appliquer le correctif</button>
+            </div>
+
+            <div id="aiLoading" style="color: #3B82F6; margin-top: 10px; display: none;">L’IA réfléchit...</div>
+
+            <div id="aiAdminInfo" style="font-size: 12px; color: #aaa; margin-top: 10px; border-top: 1px solid #334155; padding-top: 8px;">
+                💡 Astuce : Collez une erreur et cliquez sur "Analyser l'erreur" pour obtenir un patch. Si vous êtes admin, un bouton "Appliquer le correctif" apparaîtra.
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
     <script>
-       
+        // ------------ HISTORIQUES -----------
         const STORAGE_URLS = 'sartex_jira_urls';
         const STORAGE_EMAILS = 'sartex_jira_emails';
         const STORAGE_PROJECT_KEYS = 'sartex_jira_projectkeys';
@@ -668,7 +717,6 @@
         const STORAGE_ADMIN_USERNAMES = 'sartex_admin_usernames';
         const MAX_HISTORY = 10;
 
-        // --- Gestion de l'historique localStorage ---
         function loadHistoryList(storageKey) {
             let list = localStorage.getItem(storageKey);
             return list ? JSON.parse(list) : [];
@@ -723,7 +771,8 @@
             setTimeout(() => msgDiv.innerText = '', 2000);
         }
 
-        // ==================== AUTHENTIFICATION ====================
+        // ---------- AUTH ----------
+        let isAdmin = false;
 
         async function checkAuth() {
             try {
@@ -731,14 +780,16 @@
                 const data = await res.json();
                 if (!data.authenticated) {
                     window.location.href = '/login.html';
-                } else if (data.user.role === 'admin') {
-                    document.getElementById('adminBtn').style.display = 'inline-block';
+                } else {
+                    if (data.user.role === 'admin') {
+                        document.getElementById('adminBtn').style.display = 'inline-block';
+                        isAdmin = true;
+                    }
                 }
             } catch(e) {
                 window.location.href = '/login.html';
             }
         }
-
         checkAuth();
 
         document.getElementById('logoutBtn').addEventListener('click', async () => {
@@ -746,8 +797,7 @@
             window.location.href = '/login.html';
         });
 
-        // ==================== JIRA ====================
-
+        // ---------- JIRA ----------
         document.getElementById('jiraBtn').addEventListener('click', async () => {
             const res = await fetch('/api/settings/jira-url');
             const data = await res.json();
@@ -836,8 +886,7 @@
             }
         });
 
-        // ==================== PROFIL (TOKEN GITLAB) ====================
-
+        // ---------- PROFIL ----------
         const profileModal = document.getElementById('profileModal');
 
         document.getElementById('profileBtn').addEventListener('click', async () => {
@@ -867,8 +916,7 @@
             }
         });
 
-        // ==================== SCENE 3D (THREE.JS) ====================
-
+        // ---------- SCENE 3D ----------
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x0A192F);
         scene.fog = new THREE.FogExp2(0x0A192F, 0.003);
@@ -882,7 +930,6 @@
         renderer.shadowMap.enabled = true;
         document.body.appendChild(renderer.domElement);
 
-        // Cube central
         const geometry = new THREE.BoxGeometry(1.8, 1.8, 1.8);
         const materials = [
             new THREE.MeshStandardMaterial({ color: 0xff3333, metalness: 0.7, roughness: 0.2 }),
@@ -892,12 +939,12 @@
             new THREE.MeshStandardMaterial({ color: 0xff9933, metalness: 0.7, roughness: 0.2 }),
             new THREE.MeshStandardMaterial({ color: 0x33ffff, metalness: 0.7, roughness: 0.2 })
         ];
+
         const cube = new THREE.Mesh(geometry, materials);
         cube.castShadow = true;
         cube.position.set(0, 0, 0);
         scene.add(cube);
 
-        // Anneaux
         const rings = [];
         for (let i = 0; i < 3; i++) {
             const ringGeo = new THREE.TorusGeometry(2.2 + i * 0.3, 0.05, 64, 200);
@@ -909,7 +956,6 @@
             rings.push(ring);
         }
 
-        // Particules
         const particleCount = 2000;
         const particleGeo = new THREE.BufferGeometry();
         const positions = new Float32Array(particleCount * 3);
@@ -922,16 +968,18 @@
         const particles = new THREE.Points(particleGeo, new THREE.PointsMaterial({ color: 0x60A5FA, size: 0.1 }));
         scene.add(particles);
 
-        // Lumières
         const ambientLight = new THREE.AmbientLight(0x1E293B);
         scene.add(ambientLight);
+
         const dirLight = new THREE.DirectionalLight(0xffffff, 1);
         dirLight.position.set(5, 10, 7);
         dirLight.castShadow = true;
         scene.add(dirLight);
+
         const backLight = new THREE.PointLight(0x3B82F6, 0.5);
         backLight.position.set(-3, 2, -4);
         scene.add(backLight);
+
         const fillLight = new THREE.PointLight(0x60A5FA, 0.3);
         fillLight.position.set(3, 1, 4);
         scene.add(fillLight);
@@ -955,7 +1003,6 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         });
 
-        // Fonctions liées au cube
         function updateCubeColor(lang) {
             cube.scale.set(1.2, 1.2, 1.2);
             setTimeout(() => cube.scale.set(1, 1, 1), 200);
@@ -966,14 +1013,12 @@
             setTimeout(() => cube.material.forEach(m => m.emissiveIntensity = 0), 500);
         }
 
-        // ==================== LOGIQUE MÉTIER (PROJETS, DÉPLOIEMENT, HISTORIQUE, MÉTRIQUES) ====================
-
+        // ---------- LOGIQUE MÉTIER ----------
         let projectsList = [];
         let selectedProject = null;
         let selectedLang = 'java';
         let deploymentHistory = [];
 
-        // --- Historique serveur ---
         async function loadHistoryFromServer() {
             try {
                 const res = await fetch('/api/history');
@@ -1031,12 +1076,10 @@
             const notif = document.getElementById('notification');
             notif.textContent = message || (isError ? '❌ Échec du déploiement' : '✅ Déploiement réussi !');
             notif.style.backgroundColor = isError ? '#ef4444' : '#3B82F6';
-            notif.style.color = 'white';
             notif.style.display = 'block';
             setTimeout(() => { notif.style.display = 'none'; }, 5000);
         }
 
-        // --- Chargement des projets GitLab ---
         async function loadProjects() {
             const select = document.getElementById('project-select');
             select.innerHTML = '<option value="">-- Chargement des projets --</option>';
@@ -1099,7 +1142,16 @@
             }
         });
 
-        // --- Sélection manuelle du langage ---
+        function resetForNew() {
+            document.getElementById('deploy-btn').disabled = false;
+            document.getElementById('deploy-btn').classList.remove('deploying');
+            document.getElementById('status-message').innerHTML = '✅ Prêt pour un nouveau déploiement';
+            if (selectedProject) updateCubeColor(selectedProject.language);
+            else updateCubeColor(selectedLang);
+            cube.scale.set(1.1, 1.1, 1.1);
+            setTimeout(() => cube.scale.set(1, 1, 1), 300);
+        }
+
         document.querySelectorAll('.lang-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('selected'));
@@ -1112,33 +1164,12 @@
             });
         });
 
-        // --- Bouton reset ---
-        function resetForNew() {
-            document.getElementById('deploy-btn').disabled = false;
-            document.getElementById('deploy-btn').classList.remove('deploying');
-            document.getElementById('status-message').innerHTML = '✅ Prêt pour un nouveau déploiement';
-            if (selectedProject) {
-                updateCubeColor(selectedProject.language);
-            } else {
-                updateCubeColor(selectedLang);
-            }
-            cube.scale.set(1.1, 1.1, 1.1);
-            setTimeout(() => cube.scale.set(1, 1, 1), 300);
-        }
-
-        document.getElementById('reset-btn').addEventListener('click', () => {
-            resetForNew();
-            addToHistory('System', 'success', 'Prêt pour nouveau déploiement', 'System', null);
-        });
-
-        // --- Effacer historique ---
         document.getElementById('clear-history-btn').addEventListener('click', async () => {
             if (confirm('Voulez-vous vraiment effacer tout l’historique des déploiements ?')) {
                 await clearDeployHistory();
             }
         });
 
-        // --- Déploiement ---
         document.getElementById('deploy-btn').addEventListener('click', async function() {
             if (!selectedProject) {
                 document.getElementById('status-message').innerHTML = '❌ Veuillez sélectionner un projet';
@@ -1176,7 +1207,6 @@
                         showNotification(`✅ ${proj.name} déployé avec succès !`, false);
                         alert(`Pipeline déclenché avec succès !\nURL : ${runData.pipelineUrl}`);
 
-                        // Téléchargement du JSON
                         const jsonStr = JSON.stringify(runData, null, 2);
                         const blob = new Blob([jsonStr], { type: 'application/json' });
                         const url = URL.createObjectURL(blob);
@@ -1205,7 +1235,11 @@
             }
         });
 
-        // --- Métriques Prometheus ---
+        document.getElementById('reset-btn').addEventListener('click', () => {
+            resetForNew();
+            addToHistory('System', 'success', 'Prêt pour nouveau déploiement', 'System', null);
+        });
+
         async function fetchMetrics() {
             try {
                 const res = await fetch('/api/real-metrics');
@@ -1219,12 +1253,11 @@
                     throw new Error();
                 }
             } catch(e) {
-                // Fallback aléatoire
                 const fallback = {
-                    cpu: (Math.random() * 60 + 20).toFixed(1),
-                    ram: (Math.random() * 50 + 30).toFixed(1),
-                    pods: Math.floor(Math.random() * 8) + 2,
-                    temperature: (Math.random() * 30 + 20).toFixed(1)
+                    cpu: (Math.random()*60+20).toFixed(1),
+                    ram: (Math.random()*50+30).toFixed(1),
+                    pods: Math.floor(Math.random()*8)+2,
+                    temperature: (Math.random()*30+20).toFixed(1)
                 };
                 document.getElementById('cpu-value').innerText = fallback.cpu;
                 document.getElementById('ram-value').innerText = fallback.ram;
@@ -1233,8 +1266,7 @@
             }
         }
 
-        // ==================== ADMIN ====================
-
+        // ---------- ADMIN ----------
         async function openAdminPanel() {
             try {
                 const meRes = await fetch('/api/me');
@@ -1366,127 +1398,241 @@
         const adminBtn = document.getElementById('adminBtn');
         if (adminBtn) adminBtn.addEventListener('click', openAdminPanel);
 
-        // ==================== ASSISTANT IA ====================
 
+               // ---------- ASSISTANT IA (MCP) ----------
+        const aiModal = document.getElementById('aiModal');
         const aiAssistantBtn = document.getElementById('aiAssistantBtn');
+        const closeAiModal = document.getElementById('closeAiModal');
+        const aiSendBtn = document.getElementById('aiSendBtn');
+        const aiAnalyzeBtn = document.getElementById('aiAnalyzeErrorBtn');
+        const aiApplyFixBtn = document.getElementById('aiApplyFixBtn');
+        const aiPromptField = document.getElementById('aiPrompt');
+        const aiChatLogDiv = document.getElementById('aiChatLog');
+        const aiLoadingDiv = document.getElementById('aiLoading');
+        let lastPatch = null;
+        let lastFilePath = null;
+
         if (aiAssistantBtn) {
-            aiAssistantBtn.onclick = () => {
-                // Supprime une ancienne modale si elle existe
-                const existingModal = document.getElementById('aiModalDynamic');
-                if (existingModal) existingModal.remove();
+            aiAssistantBtn.onclick = () => { aiModal.style.display = 'flex'; };
+        }
+        if (closeAiModal) {
+            closeAiModal.onclick = () => { aiModal.style.display = 'none'; };
+        }
 
-                // Crée la modale avec une taille confortable
-                const modalDiv = document.createElement('div');
-                modalDiv.id = 'aiModalDynamic';
-                modalDiv.style.cssText = `
-                    position: fixed;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    background: rgba(0,0,0,0.8);
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    z-index: 1000000;
-                    pointer-events: auto;
-                `;
-                modalDiv.innerHTML = `
-                    <div style="background: #0F172A; padding: 25px; border-radius: 16px; width: 850px; max-width: 90vw; border-top: 4px solid #3B82F6; pointer-events: auto; box-shadow: 0 20px 35px rgba(0,0,0,0.4);">
-                        <span style="float: right; font-size: 28px; cursor: pointer; color: white; font-weight: bold;">&times;</span>
-                        <h3 style="color: white; font-size: 1.6rem; margin-bottom: 15px;">🤖 Assistant DevOps</h3>
-                        <div id="aiChatLogDynamic" style="height: 450px; overflow-y: auto; background: #1E293B; padding: 15px; border-radius: 12px; margin: 15px 0; color: white; font-size: 14px; line-height: 1.5;">
-                            <p><em>Posez-moi une question sur votre projet...</em></p>
-                        </div>
-                        <div style="display: flex; gap: 12px;">
-                            <input type="text" id="aiPromptDynamic" placeholder="Ex: Comment ajouter le langage Go ?" style="flex: 1; background: #1E293B; color: white; border: 1px solid #3B82F6; padding: 12px; border-radius: 8px; font-size: 14px; pointer-events: auto;">
-                            <button id="aiSendBtnDynamic" style="background: #3B82F6; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: bold; pointer-events: auto;">Envoyer</button>
-                        </div>
-                        <div id="aiLoadingDynamic" style="color: #3B82F6; margin-top: 12px; display: none; text-align: center;">L’IA réfléchit...</div>
-                    </div>
-                `;
-                document.body.appendChild(modalDiv);
+        function addAiMessage(role, text) {
+            const div = document.createElement('div');
+            div.style.margin = '8px 0';
+            div.style.padding = '6px';
+            div.style.borderRadius = '8px';
+            if (role === 'user') {
+                div.style.backgroundColor = '#1E3A8A';
+                div.style.textAlign = 'right';
+                div.innerHTML = `<strong>Vous :</strong> ${text}`;
+            } else {
+                div.style.backgroundColor = '#0F172A';
+                div.style.borderLeft = '3px solid #3B82F6';
+                const isCodeBlock = text.includes('stages:') || text.includes('diff --git') || text.includes('--- a/');
+                if (isCodeBlock) {
+                    div.innerHTML = `<strong>🤖 IA :</strong><pre style="white-space: pre-wrap; background: #111827; color: #93c5fd; padding: 10px; border-radius: 8px; margin-top: 8px; font-family: monospace; overflow-x: auto;">${escapeHtml(text)}</pre>`;
+                } else {
+                    div.innerHTML = `<strong>🤖 IA :</strong> ${text}`;
+                }
+            }
+            aiChatLogDiv.appendChild(div);
+            aiChatLogDiv.scrollTop = aiChatLogDiv.scrollHeight;
+        }
 
-                // Fermeture par la croix
-                const closeSpan = modalDiv.querySelector('span');
-                closeSpan.onclick = () => modalDiv.remove();
-                // Fermeture en cliquant à l'extérieur
-                modalDiv.onclick = (e) => { if (e.target === modalDiv) modalDiv.remove(); };
+        function escapeHtml(str) {
+            return str.replace(/[&<>]/g, function(m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
 
-                const aiChatLog = document.getElementById('aiChatLogDynamic');
-                const aiPrompt = document.getElementById('aiPromptDynamic');
-                const aiSendBtn = document.getElementById('aiSendBtnDynamic');
-                const aiLoading = document.getElementById('aiLoadingDynamic');
+       
+        function extractPatchFromResponse(analysis) {
+    const diffBlockRegex = /```(?:diff|patch)\n([\s\S]*?)\n```/i;
+    let match = analysis.match(diffBlockRegex);
+    if (match) return match[1];
 
-                if (aiPrompt) {
-                    aiPrompt.addEventListener('keypress', function(e) {
-                        if (e.key === 'Enter') {
-                            e.preventDefault();
-                            if (aiSendBtn) aiSendBtn.click();
-                        }
+    const lines = analysis.split('\n');
+    let patchLines = [];
+    let inPatch = false;
+    for (let line of lines) {
+        if (line.startsWith('--- a/') || line.startsWith('+++ b/') || line.startsWith('@@')) {
+            inPatch = true;
+            patchLines.push(line);
+        } else if (inPatch && (line.startsWith('-') || line.startsWith('+'))) {
+            patchLines.push(line);
+        } else if (inPatch && line.trim() === '') {
+            patchLines.push(line);
+        } else if (inPatch && !line.startsWith('-') && !line.startsWith('+') && !line.startsWith('@@') && line.trim() !== '') {
+            break;
+        }
+    }
+    if (patchLines.length > 0) return patchLines.join('\n');
+    return null;
+}
+ 
+    
+        function extractFilePathFromPatch(patch) {
+            const match = patch.match(/--- a\/([^\s]+)/);
+            if (!match) return null;
+            const file = match[1];
+            const allowedFiles = ['server.js', 'index.html', 'login.html', 'init-db.js'];
+            return allowedFiles.includes(file) ? file : null;
+        }
+
+        async function sendToAI(prompt, isErrorAnalysis = false) {
+    const url = isErrorAnalysis ? '/api/ai/analyze-error' : '/api/ai/ask';
+    const body = isErrorAnalysis ? { errorLog: prompt, context: 'Demande utilisateur' } : { prompt };
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (data.success) {
+            const reply = data.analysis || data.reply;
+            addAiMessage('assistant', reply);
+            
+            if (reply.includes('[TARGET_FILE:') && reply.includes('[SEARCH_CODE]') && reply.includes('[REPLACE_CODE]')) {
+                const applyButton = document.createElement('button');
+                applyButton.textContent = '✅ Appliquer la correction automatique';
+                applyButton.style.background = '#10B981';
+                applyButton.style.color = 'white';
+                applyButton.style.padding = '8px 16px';
+                applyButton.style.border = 'none';
+                applyButton.style.borderRadius = '5px';
+                applyButton.style.cursor = 'pointer';
+                applyButton.style.marginTop = '10px';
+                
+                applyButton.onclick = async () => {
+                    applyButton.disabled = true;
+                    applyButton.textContent = '⏳ Application en cours...';
+                    
+                    const fixRes = await fetch('/api/ai/apply-fix', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ rawAiReply: reply })
                     });
-                }
-
-                function addAiMessage(role, text) {
-                    const div = document.createElement('div');
-                    div.style.margin = '8px 0';
-                    div.style.padding = '6px';
-                    div.style.borderRadius = '8px';
-                    if (role === 'user') {
-                        div.style.backgroundColor = '#1E3A8A';
-                        div.style.textAlign = 'right';
-                        div.innerHTML = `<strong>Vous :</strong> ${text}`;
+                    const fixData = await fixRes.json();
+                    if (fixData.success) {
+                        addAiMessage('assistant', `✅ ${fixData.message}`);
+                        applyButton.textContent = '✅ Corrigé !';
+                        applyButton.style.background = '#6B7280';
                     } else {
-                        div.style.backgroundColor = '#0F172A';
-                        div.style.borderLeft = '3px solid #3B82F6';
-                        const isYaml = text.includes('stages:') || text.includes('script:') || text.includes('artifacts:');
-                        if (isYaml) {
-                            div.innerHTML = `<strong>🤖 IA :</strong><pre style="white-space: pre-wrap; background: #111827; color: #93c5fd; padding: 10px; border-radius: 8px; margin-top: 8px; font-family: monospace;">${text}</pre>`;
-                        } else {
-                            div.innerHTML = `<strong>🤖 IA :</strong> ${text}`;
-                        }
-                    }
-                    aiChatLog.appendChild(div);
-                    aiChatLog.scrollTop = aiChatLog.scrollHeight;
-                }
-
-                aiSendBtn.onclick = async () => {
-                    const prompt = aiPrompt.value.trim();
-                    if (!prompt) return;
-                    addAiMessage('user', prompt);
-                    aiPrompt.value = '';
-                    aiLoading.style.display = 'block';
-                    try {
-                        const res = await fetch('/api/ai/ask', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ prompt })
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                            addAiMessage('assistant', data.reply);
-                        } else {
-                            addAiMessage('assistant', '❌ Erreur : ' + data.error);
-                        }
-                    } catch (err) {
-                        addAiMessage('assistant', '❌ Erreur réseau : ' + err.message);
-                    } finally {
-                        aiLoading.style.display = 'none';
+                        addAiMessage('assistant', `❌ Échec : ${fixData.message}`);
+                        applyButton.textContent = '❌ Réessayer';
+                        applyButton.disabled = false;
                     }
                 };
+                
+                const lastMessage = aiChatLogDiv.lastChild;
+                if (lastMessage) {
+                    lastMessage.appendChild(applyButton);
+                }
+            }
+        } else {
+            addAiMessage('assistant', '❌ Erreur : ' + (data.error || 'Réponse invalide'));
+        }
+    } catch (err) {
+        addAiMessage('assistant', '❌ Erreur réseau : ' + err.message);
+    }
+}
+
+
+
+        if (aiSendBtn) {
+            aiSendBtn.onclick = async () => {
+                const prompt = aiPromptField.value.trim();
+                if (!prompt) return;
+                addAiMessage('user', prompt);
+                aiPromptField.value = '';
+                aiLoadingDiv.style.display = 'block';
+                await sendToAI(prompt, false);
+                aiLoadingDiv.style.display = 'none';
             };
         }
 
-        // ==================== FERMETURE DES MODALES  ====================
+        if (aiAnalyzeBtn) {
+            aiAnalyzeBtn.onclick = async () => {
+                const errorText = aiPromptField.value.trim();
+                if (!errorText) {
+                    addAiMessage('assistant', 'Veuillez coller un log d’erreur dans le champ ci-dessus.');
+                    return;
+                }
+                addAiMessage('user', '🔍 Analyse d’erreur :\n' + errorText);
+                aiPromptField.value = '';
+                aiLoadingDiv.style.display = 'block';
+                await sendToAI(errorText, true);
+                aiLoadingDiv.style.display = 'none';
+            };
+        }
+
+       if (aiApplyFixBtn) {
+    aiApplyFixBtn.onclick = async () => {
+        if (!lastPatch || !lastFilePath) {
+            addAiMessage('assistant', 'Aucun correctif prêt. Utilisez "Analyser l’erreur" d’abord.');
+            return;
+        }
+        if (!isAdmin) {
+            addAiMessage('assistant', '❌ Seuls les administrateurs peuvent appliquer un correctif.');
+            return;
+        }
+        if (!confirm(`Appliquer le correctif au fichier ${lastFilePath} ?`)) return;
+
+        aiLoadingDiv.style.display = 'block';
+        aiLoadingDiv.innerText = '⏳ Application du correctif en cours...';
+
+        try {
+            const res = await fetch('/api/ai/apply-fix', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filePath: lastFilePath, patch: lastPatch })
+            });
+            const data = await res.json();
+            if (data.success) {
+                addAiMessage('assistant', `✅ Correctif appliqué sur ${lastFilePath}. Redémarrez le serveur si nécessaire.`);
+                aiApplyFixBtn.style.display = 'none';
+                lastPatch = null;
+                lastFilePath = null;
+            } else {
+                addAiMessage('assistant', `❌ Échec : ${data.message}`);
+            }
+        } catch (err) {
+            addAiMessage('assistant', `❌ Erreur réseau : ${err.message}`);
+        } finally {
+            aiLoadingDiv.style.display = 'none';
+            aiLoadingDiv.innerText = 'L’IA réfléchit...'; 
+        }
+    };
+}    
+         
+
+        if (aiPromptField) {
+            aiPromptField.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (aiSendBtn) aiSendBtn.click();
+                }
+            });
+        }
 
         window.onclick = (e) => {
             if (e.target === profileModal) profileModal.style.display = 'none';
             if (e.target === jiraConfigModal) jiraConfigModal.style.display = 'none';
             if (e.target === createTicketModal) createTicketModal.style.display = 'none';
+            if (e.target === aiModal) aiModal.style.display = 'none';
         };
 
-        // ==================== INITIALISATION ====================
 
+
+
+        // ---------- INITIALISATION ----------
         refreshDatalist(STORAGE_URLS);
         refreshDatalist(STORAGE_EMAILS);
         refreshDatalist(STORAGE_PROJECT_KEYS);
